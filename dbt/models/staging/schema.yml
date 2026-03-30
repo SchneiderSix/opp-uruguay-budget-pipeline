@@ -1,0 +1,42 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: opp_budget
+    tables:
+      - name: raw_budget_credits_int
+        description: "Budget credits 2011-2019 (MONTO columns as INT64)"
+      - name: raw_budget_credits_str
+        description: "Budget credits 2020+resumen (MONTO columns as STRING)"
+      - name: raw_budget_credits_2021
+        description: "Detailed budget credits 2021 (different schema)"
+      - name: raw_presupuesto
+        description: "5-year national budget plans (2015-2019, 2020-2024)"
+      - name: raw_historico
+        description: "Historical budget execution by executing unit"
+      - name: raw_organismos
+        description: "Government organizations reference data"
+      - name: raw_pdf_extractions
+        description: "Structured data extracted from budget PDFs via Qwen model"
+
+models:
+  - name: stg_budget_credits
+    description: "Cleaned budget credits 2011-2021 unified schema"
+    columns:
+      - name: fiscal_year
+        tests:
+          - not_null
+      - name: org_id
+        tests:
+          - not_null
+
+  - name: stg_pdf_extractions
+    description: "Cleaned PDF-extracted budget data"
+    columns:
+      - name: inciso
+        tests:
+          - not_null
+      - name: fiscal_year
+        tests:
+          - not_null

@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: fct_budget_execution
+    description: "Fact table: budget allocations and execution aggregated by inciso, category, and fiscal year"
+    columns:
+      - name: execution_id
+        description: "Surrogate key"
+        tests:
+          - unique
+          - not_null
+      - name: fiscal_year
+        tests:
+          - not_null
+      - name: inciso
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_incisos')
+              field: inciso
+
+  - name: dim_incisos
+    description: "Dimension: government agencies (incisos)"
+    columns:
+      - name: inciso
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_categories
+    description: "Dimension: spending categories"
+    columns:
+      - name: categoria
+        tests:
+          - unique
+          - not_null
+      - name: category_id
+        tests:
+          - unique
+          - not_null

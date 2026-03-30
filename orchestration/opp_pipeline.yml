@@ -1,0 +1,83 @@
+id: opp_budget_pipeline
+namespace: opp.budget
+
+description: |
+  End-to-end pipeline for Uruguay OPP national budget data.
+  Ingests from CKAN, Transparency Portal, and PDF scraping,
+  then transforms via dbt into BigQuery analytical tables.
+
+triggers:
+  - id: weekly_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 6 * * 1"  # Every Monday at 06:00 UTC
+
+tasks:
+  - id: ingest
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: ingest_ckan
+        type: io.kestra.plugin.scripts.python.Script
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          image: python:3.11-slim
+        beforeCommands:
+          - pip install polars httpx google-cloud-storage pyarrow
+        script: |
+          import subprocess
+          subprocess.run(
+              ["python", "pipelines/ingest_ckan.py"],
+              check=True,
+              env={**__import__("os").environ, "UPLOAD_GCS": "true"}
+          )
+
+      - id: ingest_transparency
+        type: io.kestra.plugin.scripts.python.Script
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          image: python:3.11-slim
+        beforeCommands:
+          - pip install polars httpx google-cloud-storage pyarrow
+        script: |
+          import subprocess
+          subprocess.run(
+              ["python", "pipelines/ingest_transparency.py"],
+              check=True,
+              env={**__import__("os").environ, "UPLOAD_GCS": "true"}
+          )
+
+      - id: ingest_pdfs
+        type: io.kestra.plugin.scripts.python.Script
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          image: python:3.11-slim
+        beforeCommands:
+          - pip install httpx beautifulsoup4 lxml google-cloud-storage
+        script: |
+          import subprocess
+          subprocess.run(
+              ["python", "pipelines/ingest_pdfs.py"],
+              check=True,
+              env={**__import__("os").environ, "UPLOAD_GCS": "true"}
+          )
+
+  - id: dbt_run
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      image: python:3.11-slim
+    beforeCommands:
+      - pip install dbt-bigquery
+    script: |
+      import subprocess
+      subprocess.run(["dbt", "run", "--project-dir", "dbt"], check=True)
+
+  - id: dbt_test
+    type: io.kestra.plugin.scripts.python.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      image: python:3.11-slim
+    beforeCommands:
+      - pip install dbt-bigquery
+    script: |
+      import subprocess
+      subprocess.run(["dbt", "test", "--project-dir", "dbt"], check=True)

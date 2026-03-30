@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+
+# Credentials
+.env
+*.key.json
+credentials.json
+
+# Data (too large for git)
+data/
+
+# IDE / tools
+.playwright-mcp/
+.ipynb_checkpoints/

@@ -1,0 +1,12 @@
+# profiles.yml — configure per environment
+# Copy this to ~/.dbt/profiles.yml and fill in your project_id
+opp_budget:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: opp_budget
+      location: US
+      threads: 1

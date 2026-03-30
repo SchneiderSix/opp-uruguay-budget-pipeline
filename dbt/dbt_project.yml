@@ -1,0 +1,23 @@
+name: opp_budget
+version: "0.1.0"
+config-version: 2
+
+profile: opp_budget
+
+model-paths: ["models"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+macro-paths: ["macros"]
+
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  opp_budget:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
