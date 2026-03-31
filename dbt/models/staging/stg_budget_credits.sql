@@ -1,6 +1,6 @@
 -- Staging model: Unify budget credits 2011-2021 into consistent schema
 -- Column AÑO stored as A_O in BigQuery due to encoding
--- 2011-2019: MONTO columns are INT64; 2020+resumen: MONTO columns are STRING
+-- 2011-2019: MONTO columns are INT64; 2020+resumen and 2021: STRING with comma decimal
 
 with credits_int as (
     select
@@ -31,9 +31,9 @@ credits_str as (
         trim(AP_NOMBRE) as area_programatica,
         trim(PROGRAMA_NOMBRE) as programa,
         trim(TIPO_GASTO_NOMBRE) as tipo_gasto,
-        safe_cast(MONTO_APROBADO as float64) as monto_aprobado,
-        safe_cast(MONTO_VIGENTE as float64) as monto_vigente,
-        safe_cast(MONTO_EJECUTADO as float64) as monto_ejecutado,
+        safe_cast(replace(MONTO_APROBADO, ',', '.') as float64) as monto_aprobado,
+        safe_cast(replace(MONTO_VIGENTE, ',', '.') as float64) as monto_vigente,
+        safe_cast(replace(MONTO_EJECUTADO, ',', '.') as float64) as monto_ejecutado,
         'credits_2020_resumen' as data_source
     from {{ source('raw', 'raw_budget_credits_str') }}
     where ORG_ID is not null
@@ -50,9 +50,9 @@ credits_2021 as (
         trim(ap_nombre) as area_programatica,
         trim(programa_nombre) as programa,
         trim(tipo_gasto_nombre) as tipo_gasto,
-        safe_cast(credito as float64) as monto_aprobado,
-        safe_cast(credito as float64) as monto_vigente,
-        safe_cast(ejecutado as float64) as monto_ejecutado,
+        safe_cast(replace(credito, ',', '.') as float64) as monto_aprobado,
+        safe_cast(replace(credito, ',', '.') as float64) as monto_vigente,
+        safe_cast(replace(ejecutado, ',', '.') as float64) as monto_ejecutado,
         'credits_2021' as data_source
     from {{ source('raw', 'raw_budget_credits_2021') }}
     where organismo_codigo is not null
