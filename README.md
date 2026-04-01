@@ -68,11 +68,11 @@ This pipeline ingests data from all three sources, extracts structured data from
 
 ## Dashboard
 
-**Looker Studio**: [link placeholder -- replace with your shared Looker Studio URL]
+**Looker Studio**: [OPP Report](https://lookerstudio.google.com/reporting/a7d6e78e-631c-49eb-820a-5bbb5533ef80)
 
-Two tiles as required:
-1. **Bar chart (categorical)** -- Budget allocation by government agency (`denominacion_inciso`), filterable by fiscal year
-2. **Line chart (temporal)** -- Budget evolution over time (2005-2024) showing `credito_vigente` vs `ejecucion`
+Tiles:
+1. **Bar chart** -- Budget allocation by government agency (`denominacion_inciso`), top 10 by total credito vigente
+2. **Line chart** -- Budget evolution over time showing `credito_vigente` vs `ejecucion`
 
 ## Technologies Used
 

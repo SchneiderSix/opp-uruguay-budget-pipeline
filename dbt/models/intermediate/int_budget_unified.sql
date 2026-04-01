@@ -1,4 +1,5 @@
 -- Intermediate model: Union budget credits + PDF extractions into consistent schema
+-- PDF denominacion_inciso is normalized using canonical names from credits sources
 
 with credits as (
     select
@@ -12,16 +13,31 @@ with credits as (
     from {{ ref('stg_budget_credits') }}
 ),
 
+-- Canonical inciso names from credits (most reliable source)
+canonical_names as (
+    select distinct
+        org_id as inciso,
+        first_value(org_nombre) over (
+            partition by org_id
+            order by org_nombre
+        ) as canonical_name
+    from {{ ref('stg_budget_credits') }}
+    where org_nombre is not null
+      and length(trim(org_nombre)) > 3
+),
+
 pdf as (
     select
-        fiscal_year,
-        inciso,
-        denominacion_inciso,
-        categoria,
-        monto as credito_vigente,
+        p.fiscal_year,
+        p.inciso,
+        -- Replace noisy LLM names with canonical credits name when available
+        coalesce(cn.canonical_name, p.denominacion_inciso) as denominacion_inciso,
+        p.categoria,
+        p.monto as credito_vigente,
         cast(null as float64) as ejecucion,
-        data_source
-    from {{ ref('stg_pdf_extractions') }}
+        p.data_source
+    from {{ ref('stg_pdf_extractions') }} p
+    left join canonical_names cn on p.inciso = cn.inciso
 ),
 
 unioned as (
