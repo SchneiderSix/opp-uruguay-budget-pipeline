@@ -24,12 +24,12 @@ enriched as (
         case
             when prev_year_credito is not null and prev_year_credito > 0
             then round((credito_vigente - prev_year_credito) / prev_year_credito * 100, 2)
-            else null
+            else 0
         end as credito_yoy_pct_change,
         case
             when credito_vigente is not null and credito_vigente > 0
             then round(ejecucion / credito_vigente * 100, 2)
-            else null
+            else 0
         end as execution_rate_pct
     from with_lag
 )

@@ -8,7 +8,7 @@ with credits as (
         org_nombre as denominacion_inciso,
         tipo_gasto as categoria,
         monto_vigente as credito_vigente,
-        monto_ejecutado as ejecucion,
+        coalesce(monto_ejecutado, 0) as ejecucion,
         data_source
     from {{ ref('stg_budget_credits') }}
 ),
@@ -34,7 +34,7 @@ pdf as (
         coalesce(cn.canonical_name, p.denominacion_inciso) as denominacion_inciso,
         p.categoria,
         p.monto as credito_vigente,
-        cast(null as float64) as ejecucion,
+        cast(0 as float64) as ejecucion,
         p.data_source
     from {{ ref('stg_pdf_extractions') }} p
     left join canonical_names cn on p.inciso = cn.inciso
