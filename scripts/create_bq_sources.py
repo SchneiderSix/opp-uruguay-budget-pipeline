@@ -47,6 +47,10 @@ TABLES = [
         "uris": [f"gs://{BUCKET}/raw/transparency/organismos.parquet"],
     },
     {
+        "table_id": "raw_cgn_execution",
+        "uris": [f"gs://{BUCKET}/raw/cgn/siif_ejecucion_all.parquet"],
+    },
+    {
         "table_id": "raw_pdf_extractions",
         "uris": [f"gs://{BUCKET}/processed/pdf_extractions/budget_data.parquet"],
     },
@@ -67,8 +71,11 @@ for t in TABLES:
 
     table = bigquery.Table(table_ref)
     table.external_data_configuration = external_config
-    table = client.create_table(table)
-    print(f"Created: {t['table_id']} -> {len(t['uris'])} file(s)")
+    try:
+        table = client.create_table(table)
+        print(f"Created: {t['table_id']} -> {len(t['uris'])} file(s)")
+    except Exception as e:
+        print(f"SKIP:    {t['table_id']} -> {e}")
 
 # Clean up old tables
 for old in ["raw_ckan", "raw_transparency", "raw_budget_credits"]:

@@ -6,11 +6,12 @@ End-to-end data engineering pipeline for Uruguay's national budget data from the
 
 Uruguay's national budget data is scattered across multiple government sources with no unified analytical layer:
 
-- **CKAN Open Data Portal** (`catalogodatos.gub.uy`): 56 datasets in CSV format with inconsistent schemas
-- **Transparency Portal** (`transparenciapresupuestaria.opp.gub.uy`): Budget credits and execution data (2011-2021) in CSV, converted to Parquet
-- **PDF Documents** (`opp.gub.uy`): Historical budget reports in unstructured PDF format (572 PDFs scraped)
+- **CKAN Open Data Portal** (`catalogodatos.gub.uy`): 61 CSV resources across 19 packages via CKAN REST API
+- **Transparency Portal** (`transparenciapresupuestaria.opp.gub.uy`): Budget credits and execution data (2011-2021) in CSV, accessed via CKAN Datastore dump API (direct portal returns 403)
+- **PDF Documents** (`opp.gub.uy`): 579 official budget reports in unstructured PDF format (historical + budget law texts)
+- **CGN SIIF** (`cgn.gub.uy`): Official per-inciso budget execution from the Contaduria General de la Nacion (authoritative reference for 2020 and 2023)
 
-This pipeline ingests data from all three sources, extracts structured data from PDFs using a language model (Qwen2.5-3B on Google Colab with T4 GPU), and transforms everything into an analytical star-schema warehouse to answer questions like:
+This pipeline ingests data from all four sources, extracts structured data from PDFs using a multimodal LLM (Qwen2.5-VL on Google Colab with T4 GPU), and transforms everything into an analytical star-schema warehouse to answer questions like:
 
 - How has government spending evolved from 2005 to 2024?
 - Which agencies (incisos) receive the most funding?
@@ -21,25 +22,25 @@ This pipeline ingests data from all three sources, extracts structured data from
 
 ```
  Data Sources
- +-----------------+   +---------------------+   +-------------------+
- |   CKAN API      |   |  Transparency       |   |  OPP Website      |
- | (catalogodatos) |   |  Portal (CSVs)      |   |  (572 PDFs)       |
- +--------+--------+   +---------+-----------+   +---------+---------+
-          |                       |                         |
-          +----------+------------+                         |
-                     |                           +----------+---------+
-                     v                           | Google Colab (GPU) |
-          +---------------------+                | Qwen2.5-3B FP16   |
-          | Notebook 01         |                | PDF -> Parquet     |
-          | Ingestion & EDA     |                +----------+---------+
-          +---------+-----------+                           |
-                    |                                       |
-                    v                                       v
-          +----------------------------------------------------+
-          |              GCS Data Lake (Parquet)                |
-          |  raw/ckan/  raw/transparency/  raw/pdfs/           |
-          |  processed/pdf_extractions/                        |
-          +--------------------------+-------------------------+
+ +-----------------+   +---------------------+   +-------------------+   +-------------+
+ |   CKAN API      |   |  Transparency       |   |  OPP Website      |   |  CGN SIIF   |
+ | (catalogodatos) |   |  Portal (CSVs)      |   |  (579 PDFs)       |   | (reference) |
+ +--------+--------+   +---------+-----------+   +---------+---------+   +------+------+
+          |                       |                         |                     |
+          +----------+------------+                         |                     |
+                     |                           +----------+---------+           |
+                     v                           | Google Colab (GPU) |           |
+          +---------------------+                | Qwen2.5-VL FP16   |           |
+          | Notebook 01         |                | PDF -> Parquet     |           |
+          | Ingestion & EDA     |                +----------+---------+           |
+          +---------+-----------+                           |                     |
+                    |                                       |                     |
+                    v                                       v                     v
+          +---------------------------------------------------------------------+
+          |              GCS Data Lake (Parquet)                                 |
+          |  raw/ckan/  raw/transparency/  raw/pdfs/  raw/cgn/                  |
+          |  processed/pdf_extractions/                                         |
+          +-----------------------------------+---------------------------------+
                                      |
                            +---------v---------+
                            | BigQuery External |
@@ -102,7 +103,7 @@ project-1/
 │   └── 03_bqml_analysis.ipynb  # BigQuery ML experiments + visualizations
 ├── dbt/                        # Data transformations (run locally)
 │   ├── models/
-│   │   ├── staging/            # stg_budget_credits, stg_pdf_extractions
+│   │   ├── staging/            # stg_budget_credits, stg_pdf_extractions, stg_cgn_execution
 │   │   ├── intermediate/       # int_budget_unified, int_budget_enriched
 │   │   └── marts/              # fct_budget_execution, dim_incisos, dim_categories
 │   ├── dbt_project.yml
@@ -137,6 +138,7 @@ Partitioned by `fiscal_year` (integer range 2005-2030, interval 1). Clustered by
 | `categoria` | STRING | Spending category / type of expenditure |
 | `total_credito_vigente` | FLOAT64 | Approved budget amount (Uruguayan pesos, UYU) |
 | `total_ejecucion` | FLOAT64 | Actual spending (UYU). NULL when execution data is unavailable |
+| `total_inversion` | FLOAT64 | Capital investment spending (UYU) |
 | `avg_execution_rate_pct` | FLOAT64 | Execution rate: (ejecucion / credito) * 100 |
 | `avg_credito_yoy_pct_change` | FLOAT64 | Year-over-year budget change (%) |
 | `record_count` | INT64 | Number of source records aggregated into this row |
@@ -186,24 +188,34 @@ Partitioned by `fiscal_year` (integer range 2005-2030, interval 1). Clustered by
 | 2021 different schema | Uses lowercase names (`organismo_codigo`, `credito`, `ejecutado`) instead of uppercase (`ORG_ID`, `MONTO_VIGENTE`, `MONTO_EJECUTADO`) | Separate CTE in `stg_budget_credits.sql` |
 | Missing execution data | PDF extractions and years 2019-2024 lack execution figures | Stored as NULL (not zero) to distinguish from actual zero spend |
 
-### Data Coverage by Year
+### Source Prioritization (Deduplication Strategy)
 
-| Year Range | Source | Budget Data | Execution Data |
-|-----------|--------|-------------|----------------|
-| 2005-2010 | PDF extractions (Qwen2.5) | Partial | Not available |
-| 2011-2018 | Transparency Portal | Complete | Complete |
-| 2019 | Transparency Portal | Complete | Missing (data gap) |
-| 2020 | Transparency Portal (STRING format) | Complete | Not available |
-| 2021 | Separate credits file | Partial | Partial |
-| 2022-2024 | PDF extractions | Sparse | Not available |
+To avoid double-counting from overlapping datasets, the pipeline selects **one authoritative source per year**:
 
-### PDF Extraction Limitations
+| Year Range | Source | Why |
+|-----------|--------|-----|
+| 2005-2010 | PDF extractions (Qwen2.5-VL) | Only available source |
+| 2011-2019 | credits_2020_resumen (~1.8K rows/yr) | Consistent, has execution data |
+| 2020, 2023 | CGN SIIF (official totals) | Authoritative government benchmark |
+| 2021 | credits_2021 | Only source for this year |
+| 2022, 2024 | PDF extractions | Only available source |
 
-- **113 of 572 PDFs** were processed with Qwen2.5-3B-Instruct (FP16 on T4 GPU) due to Google Colab runtime time limits
-- The extraction pipeline saves **per-PDF checkpoints** to GCS (`processed/pdf_extractions/checkpoints/`) for resilience against Colab disconnects
-- Some PDFs are corrupted (`PDFNoValidXRef` / `PSEOF` errors) and are skipped automatically
-- The LLM occasionally hallucinates large numbers; these are filtered out during validation (amounts > 1e15 UYU are excluded, fiscal_year must be 1985-2030)
-- All extracted records use a strict schema with explicit column types (`pl.Utf8`) to handle inconsistent LLM output
+**Excluded**: `credits_2011_2019` (incomplete for 2013-2018), `credits_2020_resumen` for year 2020 (34K rows, 2x inflated vs CGN official).
+
+### PDF Extraction & Data Quality
+
+- **113 of 579 PDFs** processed with Qwen2.5-VL (FP16 on T4 GPU) due to Google Colab runtime limits
+- Per-PDF checkpoints saved to GCS (`processed/pdf_extractions/checkpoints_v3/`) for resilience against Colab disconnects
+- Corrupted PDFs (`PDFNoValidXRef` / `PSEOF` errors) are skipped automatically
+- Three explicit amount columns (`credito_vigente`, `credito_ejecutado`, `inversion`) replace ambiguous single `monto`
+
+**5-stage LLM validation pipeline** in `stg_pdf_extractions.sql`:
+
+1. **Range checks**: inciso 1-36, fiscal_year 2000-2030
+2. **Non-null core fields**: inciso, fiscal_year, denominacion_inciso required
+3. **Amount validation**: at least one amount column > 0 (filters percentages and KPI counts)
+4. **Garbage detection**: filters equipment names, city names misidentified as agencies (regex-based)
+5. **Canonical name normalization**: LLM agency names replaced with official names from credits sources
 
 ## dbt Model Lineage
 
@@ -212,18 +224,20 @@ Sources (BigQuery External Tables on GCS Parquet)
   raw_budget_credits_int  ── 2011-2019, MONTO columns as INT64
   raw_budget_credits_str  ── 2020 + resumen, MONTO columns as STRING
   raw_budget_credits_2021 ── different column naming convention
-  raw_pdf_extractions     ── Qwen2.5-3B extracted data
+  raw_pdf_extractions     ── Qwen2.5-VL extracted data (v3: 3 amount columns)
+  raw_cgn_execution       ── CGN SIIF official per-inciso execution (2020, 2023)
   raw_presupuesto         ── 5-year national budget plans
   raw_historico           ── historical execution by executing unit
   raw_organismos          ── government organizations reference
 
 Staging (views)
   stg_budget_credits      <- unions 3 credit sources, normalizes columns and types
-  stg_pdf_extractions     <- cleans PDF extraction output
+  stg_pdf_extractions     <- cleans PDF output (5-stage validation + canonical names)
+  stg_cgn_execution       <- CGN SIIF reference data, validates inciso 1-36
 
 Intermediate (views)
-  int_budget_unified      <- unions credits + PDF data into consistent schema
-  int_budget_enriched     <- adds YoY % change and execution rate metrics
+  int_budget_unified      <- best source per year (credits + CGN + PDF, no overlaps)
+  int_budget_enriched     <- adds YoY % change, execution rate, inversion trends
 
 Marts (materialized tables)
   fct_budget_execution    <- aggregated fact table (partitioned by fiscal_year, clustered by inciso + categoria)
@@ -235,9 +249,9 @@ Marts (materialized tables)
 
 The Kestra flow (`orchestration/opp_pipeline.yml`) defines a weekly DAG:
 
-1. **Parallel ingestion**: CKAN + Transparency + PDFs run simultaneously in Docker containers
-2. **dbt run**: Executes all 7 models (staging -> intermediate -> marts)
-3. **dbt test**: Runs 18 data quality tests (not_null, unique, referential integrity)
+1. **Parallel ingestion**: CKAN + Transparency + PDFs + CGN run simultaneously in Docker containers
+2. **dbt run**: Executes all 8 models (staging -> intermediate -> marts)
+3. **dbt test**: Runs data quality tests (not_null, unique, referential integrity)
 
 Schedule: Every Monday at 06:00 UTC.
 
@@ -284,8 +298,8 @@ Creates: GCS bucket, BigQuery dataset `opp_budget`, service account with IAM rol
 
 Upload and run notebooks **in order** on Google Colab:
 
-1. **`01_ingestion_eda.ipynb`** -- Ingests from CKAN, Transparency Portal, and scrapes PDFs. Uploads Parquet to GCS. (~15 min)
-2. **`02_pdf_extraction.ipynb`** -- Extracts structured data from PDFs using Qwen2.5-3B on T4 GPU. Saves per-PDF checkpoints. (~2-4 hours)
+1. **`01_ingestion_eda.ipynb`** -- Ingests from CKAN, Transparency Portal, scrapes PDFs, and embeds CGN SIIF reference data. Uploads Parquet to GCS. (~15 min)
+2. **`02_pdf_extraction.ipynb`** -- Extracts structured data from PDFs using Qwen2.5-VL on T4 GPU. Three amount columns (v3), per-PDF checkpoints, 5-stage validation. (~2-4 hours)
 
 ### Step 5: Create BigQuery external tables
 
@@ -299,8 +313,8 @@ uv run python scripts/create_bq_sources.py
 export GCP_PROJECT_ID=<YOUR_PROJECT_ID>
 cd dbt
 uv run dbt deps
-uv run dbt run    # 7 models: PASS=7
-uv run dbt test   # 18 tests: PASS=18
+uv run dbt run    # 8 models: PASS=8
+uv run dbt test   # data quality tests
 ```
 
 ### Step 7: Create dashboard

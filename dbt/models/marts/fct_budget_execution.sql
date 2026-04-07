@@ -29,6 +29,7 @@ aggregated as (
         categoria,
         sum(credito_vigente) as total_credito_vigente,
         sum(ejecucion) as total_ejecucion,
+        sum(inversion) as total_inversion,
         avg(execution_rate_pct) as avg_execution_rate_pct,
         avg(credito_yoy_pct_change) as avg_credito_yoy_pct_change,
         count(*) as record_count,

@@ -18,6 +18,8 @@ models:
           - relationships:
               to: ref('dim_incisos')
               field: inciso
+      - name: total_inversion
+        description: "Sum of investment amounts per inciso/category/year"
 
   - name: dim_incisos
     description: "Dimension: government agencies (incisos)"

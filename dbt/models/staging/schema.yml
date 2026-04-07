@@ -19,6 +19,8 @@ sources:
         description: "Government organizations reference data"
       - name: raw_pdf_extractions
         description: "Structured data extracted from budget PDFs via Qwen model"
+      - name: raw_cgn_execution
+        description: "CGN SIIF budget execution reference data by inciso"
 
 models:
   - name: stg_budget_credits
@@ -32,7 +34,17 @@ models:
           - not_null
 
   - name: stg_pdf_extractions
-    description: "Cleaned PDF-extracted budget data"
+    description: "Cleaned PDF-extracted budget data (v3: credito_vigente, credito_ejecutado, inversion)"
+    columns:
+      - name: inciso
+        tests:
+          - not_null
+      - name: fiscal_year
+        tests:
+          - not_null
+
+  - name: stg_cgn_execution
+    description: "CGN SIIF budget execution reference data by inciso"
     columns:
       - name: inciso
         tests:
